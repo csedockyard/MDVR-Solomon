@@ -16,6 +16,7 @@ class Ant:
         self.route = [0]
         self.total_distance = 0
         self.current_node = 0
+        self.vehicle_count = 1
         self.reset()
 
     def reset(self):
@@ -49,6 +50,7 @@ class Ant:
             # Return to depot → reset load + time
             self.current_load = 0
             self.current_time = 0
+            self.vehicle_count += 1 
         else:
             self.current_load += demand
 
@@ -69,6 +71,7 @@ class ACO_Colony:
         self.demand_array = demand_array
         self.vehicle_capacity = vehicle_capacity
         self.num_ants = num_ants
+        self.vehicle_penalty = 100  # tune later
 
         self.num_nodes = len(distance_matrix)
 
@@ -110,7 +113,10 @@ class ACO_Colony:
 
         self.update_pheromones(ants)
 
-        best_ant = min(ants, key=lambda a: a.total_distance)
+        best_ant = min(
+    ants,
+    key=lambda a: a.total_distance + (a.vehicle_count * self.vehicle_penalty)
+)
         return best_ant
 
     # -------------------------------
@@ -134,7 +140,33 @@ class ACO_Colony:
         current = ant.current_node
 
         unvisited = [n for n in range(1, self.num_nodes) if n not in ant.route]
+
+# Include depot as an option
         feasible = [n for n in unvisited if ant.can_visit(self.demand_array[n])]
+        feasible.append(0)  # 🔥 allow returning anytime
+
+        for n in unvisited:
+
+            demand = self.demand_array[n]
+
+            # 1. Capacity constraint
+            if not ant.can_visit(demand):
+                continue
+
+            # 2. Compute arrival time
+            travel_time = self.distance_matrix[ant.current_node][n]
+            arrival_time = ant.current_time + travel_time
+
+            # 3. Apply waiting if early
+            if arrival_time < self.ready_time[n]:
+                arrival_time = self.ready_time[n]
+
+            # 4. Check due date constraint
+            if arrival_time > self.due_time[n]:
+                continue  # ❌ reject node
+
+            # If all constraints satisfied
+            feasible.append(n)
 
         if not feasible:
             return 0
@@ -142,10 +174,15 @@ class ACO_Colony:
         probs = np.zeros(len(feasible))
 
         for i, nxt in enumerate(feasible):
-            pheromone = self.pheromone_matrix[current][nxt]
-            distance = self.distance_matrix[current][nxt]
 
-            visibility = 1.0 / distance if distance > 0 else 1e-4
+            pheromone = self.pheromone_matrix[current][nxt]
+
+            if nxt == 0:
+                # 🚨 Penalize returning to depot (vehicle usage)
+                visibility = 1.0 / (1 + self.vehicle_penalty)
+            else:
+                distance = self.distance_matrix[current][nxt]
+                visibility = 1.0 / distance if distance > 0 else 1e-4
 
             probs[i] = (pheromone ** self.alpha) * (visibility ** self.beta)
 
