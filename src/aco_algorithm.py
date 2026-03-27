@@ -5,8 +5,17 @@ import numpy as np
 # ANT CLASS (Agent)
 # -------------------------------
 class Ant:
-    def __init__(self, vehicle_capacity):
+    def __init__(self, vehicle_capacity, ready_time, due_time, service_time):
         self.capacity = vehicle_capacity
+        self.current_time = 0
+        self.ready_time = ready_time
+        self.due_time = due_time
+        self.service_time = service_time
+        self.current_load = 0
+        self.vehicle_capacity = vehicle_capacity
+        self.route = [0]
+        self.total_distance = 0
+        self.current_node = 0
         self.reset()
 
     def reset(self):
@@ -14,27 +23,47 @@ class Ant:
         self.current_node = 0
         self.current_load = 0
         self.total_distance = 0
+        
 
     def visit_node(self, node_id, demand, distance):
+    
+        # 1. Travel time (distance = time assumption)
+        travel_time = distance
+
+        # 2. Compute arrival
+        arrival_time = self.current_time + travel_time
+
+        # 3. Apply waiting if early
+        if arrival_time < self.ready_time[node_id]:
+            arrival_time = self.ready_time[node_id]
+
+        # 4. Update time AFTER service
+        self.current_time = arrival_time + self.service_time[node_id]
+
+        # 5. Standard updates
         self.route.append(node_id)
         self.total_distance += distance
         self.current_node = node_id
 
         if node_id == 0:
+            # Return to depot → reset load + time
             self.current_load = 0
+            self.current_time = 0
         else:
             self.current_load += demand
 
     def can_visit(self, demand):
-        return (self.current_load + demand) <= self.capacity
+            return (self.current_load + demand) <= self.capacity
 
 
 # -------------------------------
 # ACO COLONY
 # -------------------------------
 class ACO_Colony:
-    def __init__(self, distance_matrix, demand_array, vehicle_capacity,
-                 num_ants=20, alpha=1.0, beta=2.0, evaporation=0.5):
+    def __init__(self, distance_matrix, demand_array,
+             ready_time, due_time, service_time,
+             vehicle_capacity,
+             num_ants=20, alpha=1.0, beta=2.0, evaporation=0.5):
 
         self.distance_matrix = distance_matrix
         self.demand_array = demand_array
@@ -50,9 +79,19 @@ class ACO_Colony:
         self.beta = beta
         self.evaporation = evaporation
 
+        self.ready_time = ready_time
+        self.due_time = due_time
+        self.service_time = service_time
+
     # -------------------------------
     def run_one_iteration(self):
-        ants = [Ant(self.vehicle_capacity) for _ in range(self.num_ants)]
+        ants = [
+    Ant(self.vehicle_capacity,
+        self.ready_time,
+        self.due_time,
+        self.service_time)
+    for _ in range(self.num_ants)
+]
 
         for ant in ants:
 

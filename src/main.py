@@ -35,14 +35,17 @@ def run_aco_with_params(distance_matrix, demand_array,
                         params):
 
     colony = ACO_Colony(
-        distance_matrix=distance_matrix,
-        demand_array=demand_array,
-        vehicle_capacity=200,
-        num_ants=params["ants"],
-        alpha=params["alpha"],
-        beta=params["beta"],
-        evaporation=params["evap"]
-    )
+    distance_matrix=distance_matrix,
+    demand_array=demand_array,
+    ready_time=ready_time,
+    due_time=due_time,
+    service_time=service_time,
+    vehicle_capacity=200,
+    num_ants=params["ants"],
+    alpha=params["alpha"],
+    beta=params["beta"],
+    evaporation=params["evap"]
+)
 
     best_distance = float('inf')
     best_route = []
