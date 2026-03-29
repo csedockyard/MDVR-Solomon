@@ -40,14 +40,14 @@ def load_solomon_data(filepath):
 
     return depot, customers
 
-
 def calculate_distance_matrix(depot, customers):
     """
     Builds distance + demand + time arrays
     """
 
-    all_nodes = [depot] + [row for _, row in customers.iterrows()]
+    all_nodes = [depot.to_dict()] + [row.to_dict() for _, row in customers.iterrows()]
     num_nodes = len(all_nodes)
+    print(all_nodes[0])
 
     distance_matrix = np.zeros((num_nodes, num_nodes))
     demand_array = np.zeros(num_nodes)
