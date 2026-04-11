@@ -17,6 +17,7 @@ class Ant:
         self.total_distance = 0
         self.current_node = 0
         self.vehicle_count = 1
+        self.visited_customers = set()
         self.reset()
 
     def reset(self):
@@ -24,6 +25,9 @@ class Ant:
         self.current_node = 0
         self.current_load = 0
         self.total_distance = 0
+        self.current_time = 0
+        self.vehicle_count = 1
+        self.visited_customers.clear()
         
 
     def visit_node(self, node_id, demand, distance):
@@ -53,6 +57,7 @@ class Ant:
             self.vehicle_count += 1 
         else:
             self.current_load += demand
+            self.visited_customers.add(int(node_id))
 
     def can_visit(self, demand):
             return (self.current_load + demand) <= self.capacity
@@ -65,13 +70,14 @@ class ACO_Colony:
     def __init__(self, distance_matrix, demand_array,
              ready_time, due_time, service_time,
              vehicle_capacity,
-             num_ants=20, alpha=1.0, beta=2.0, evaporation=0.5):
+             num_ants=20, alpha=1.0, beta=2.0, evaporation=0.5,
+             vehicle_penalty=100.0):
 
         self.distance_matrix = distance_matrix
         self.demand_array = demand_array
         self.vehicle_capacity = vehicle_capacity
         self.num_ants = num_ants
-        self.vehicle_penalty = 100  # tune later
+        self.vehicle_penalty = float(vehicle_penalty)
 
         self.num_nodes = len(distance_matrix)
 
@@ -89,22 +95,37 @@ class ACO_Colony:
     # -------------------------------
     def run_one_iteration(self):
         ants = [
-    Ant(self.vehicle_capacity,
-        self.ready_time,
-        self.due_time,
-        self.service_time)
-    for _ in range(self.num_ants)
-]
+            Ant(
+                self.vehicle_capacity,
+                self.ready_time,
+                self.due_time,
+                self.service_time,
+            )
+            for _ in range(self.num_ants)
+        ]
 
         for ant in ants:
+            steps = 0
+            max_steps = max(100, self.num_nodes * 8)
+            stalled_at_depot = 0
 
-            while len(set(ant.route) - {0}) < (self.num_nodes - 1):
+            while len(ant.visited_customers) < (self.num_nodes - 1):
 
                 next_node = self.choose_next_node(ant)
+                if next_node == 0 and ant.current_node == 0:
+                    stalled_at_depot += 1
+                else:
+                    stalled_at_depot = 0
+
+                # Prevent getting stuck in no-progress depot loops.
+                if stalled_at_depot >= self.num_nodes or steps >= max_steps:
+                    break
+
                 distance = self.distance_matrix[ant.current_node][next_node]
                 demand = self.demand_array[next_node]
 
                 ant.visit_node(next_node, demand, distance)
+                steps += 1
 
             # return to depot
             if ant.current_node != 0:
@@ -114,9 +135,13 @@ class ACO_Colony:
         self.update_pheromones(ants)
 
         best_ant = min(
-    ants,
-    key=lambda a: a.total_distance + (a.vehicle_count * self.vehicle_penalty)
-)
+            ants,
+            key=lambda a: (
+                a.total_distance
+                + (a.vehicle_count * self.vehicle_penalty)
+                + ((self.num_nodes - 1 - len(a.visited_customers)) * 1e6)
+            ),
+        )
         return best_ant
 
     # -------------------------------
@@ -125,6 +150,8 @@ class ACO_Colony:
         self.pheromone_matrix *= (1.0 - self.evaporation)
 
         for ant in ants:
+            if ant.total_distance <= 0:
+                continue
             pheromone_to_drop = 100.0 / ant.total_distance
 
             for i in range(len(ant.route) - 1):
@@ -139,19 +166,19 @@ class ACO_Colony:
 
         current = ant.current_node
 
-        unvisited = [n for n in range(1, self.num_nodes) if n not in ant.route]
+        unvisited = [n for n in range(1, self.num_nodes) if n not in ant.visited_customers]
+        if not unvisited:
+            return 0
 
-# Include depot as an option
-        feasible = [n for n in unvisited if ant.can_visit(self.demand_array[n])]
-        feasible.append(0)  # 🔥 allow returning anytime
+        capacity_feasible = [n for n in unvisited if ant.can_visit(self.demand_array[n])]
+        if not capacity_feasible:
+            return 0
 
-        for n in unvisited:
+        # Prefer time-feasible nodes, but fall back to capacity-feasible ones
+        # so ants can still make progress and avoid no-progress depot loops.
+        time_feasible = []
 
-            demand = self.demand_array[n]
-
-            # 1. Capacity constraint
-            if not ant.can_visit(demand):
-                continue
+        for n in capacity_feasible:
 
             # 2. Compute arrival time
             travel_time = self.distance_matrix[ant.current_node][n]
@@ -166,10 +193,13 @@ class ACO_Colony:
                 continue  # ❌ reject node
 
             # If all constraints satisfied
-            feasible.append(n)
+            time_feasible.append(n)
 
-        if not feasible:
-            return 0
+        feasible = time_feasible if time_feasible else capacity_feasible
+
+        # Never choose depot from depot while customers are still unvisited.
+        if current != 0:
+            feasible.append(0)
 
         probs = np.zeros(len(feasible))
 

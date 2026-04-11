@@ -4,27 +4,40 @@ import math
 import os
 
 def load_solomon_data(filepath):
-    """
-    Parses Solomon dataset safely (no column loss).
-    """
+    import pandas as pd
 
-    if not os.path.exists(filepath):
-        print(f"Error: Dataset not found at {filepath}")
-        return None, None
+    with open(filepath, "r") as f:
+        lines = f.readlines()
 
-    # Read raw (no column assumptions)
-    df = pd.read_csv(
-        filepath,
-        sep=r'\s+',
-        skiprows=9,
-        header=None
-    )
+    # -------- FIND CUSTOMER SECTION --------
+    start = 0
+    for i, line in enumerate(lines):
+        if "CUSTOMER" in line:
+            start = i + 2   # skip header line
+            break
 
-    # Keep only first 7 columns (important!)
-    df = df.iloc[:, :7]
+    # -------- READ DATA --------
+    data = []
+    for line in lines[start:]:
+        if line.strip() == "":
+            continue
 
-    # Assign correct column names
-    df.columns = [
+        parts = line.split()
+
+        if len(parts) < 7:
+            continue
+
+        data.append([
+            int(parts[0]),
+            float(parts[1]),
+            float(parts[2]),
+            float(parts[3]),
+            float(parts[4]),
+            float(parts[5]),
+            float(parts[6])
+        ])
+
+    df = pd.DataFrame(data, columns=[
         'CUST_NO',
         'XCOORD',
         'YCOORD',
@@ -32,9 +45,8 @@ def load_solomon_data(filepath):
         'READY_TIME',
         'DUE_DATE',
         'SERVICE_TIME'
-    ]
+    ])
 
-    # Extract depot and customers
     depot = df.iloc[0]
     customers = df.iloc[1:].copy()
 
@@ -47,7 +59,6 @@ def calculate_distance_matrix(depot, customers):
 
     all_nodes = [depot.to_dict()] + [row.to_dict() for _, row in customers.iterrows()]
     num_nodes = len(all_nodes)
-    print(all_nodes[0])
 
     distance_matrix = np.zeros((num_nodes, num_nodes))
     demand_array = np.zeros(num_nodes)
